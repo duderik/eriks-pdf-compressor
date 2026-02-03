@@ -19,7 +19,7 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 # Configuration
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_SIZE = 250 * 1024 * 1024  # 250MB
 TEMP_DIR = "/tmp/pdf-compressor"
 ALLOWED_EXTENSIONS = {".pdf"}
 PDF_MAGIC_BYTES = b"%PDF-"
@@ -398,7 +398,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         <div class="dropzone" id="dropzone">
             <p class="dropzone-text">PDF hier ablegen</p>
-            <p class="dropzone-hint">Maximal 50 MB</p>
+            <p class="dropzone-hint">Maximal 250 MB</p>
         </div>
         <input type="file" id="fileInput" accept=".pdf">
 
@@ -455,8 +455,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 showError('Nur PDF-Dateien sind erlaubt.');
                 return;
             }
-            if (file.size > 50 * 1024 * 1024) {
-                showError('Datei ist zu groß (max. 50 MB).');
+            if (file.size > 250 * 1024 * 1024) {
+                showError('Datei ist zu groß (max. 250 MB).');
                 return;
             }
 
@@ -584,7 +584,7 @@ def compress():
     file.seek(0)
 
     if size > MAX_FILE_SIZE:
-        return jsonify({"error": "Datei ist zu groß (max. 50 MB)"}), 400
+        return jsonify({"error": "Datei ist zu groß (max. 250 MB)"}), 400
 
     if size == 0:
         return jsonify({"error": "Datei ist leer"}), 400
