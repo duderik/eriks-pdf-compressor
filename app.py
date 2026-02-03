@@ -1,6 +1,6 @@
 """
 PDF Compressor - Minimalistic PDF compression web app
-Uses Ghostscript with 'ebook' preset for compression
+Uses Ghostscript with customizable DPI and quality settings
 Auto-deletes files immediately after download
 """
 
@@ -10,16 +10,39 @@ import subprocess
 import atexit
 import glob
 import time
+import hashlib
+from typing import Optional
 from io import BytesIO
-from flask import Flask, request, send_file, jsonify, Response
+from flask import Flask, request, send_file, jsonify, make_response, redirect
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
 # Configuration
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 TEMP_DIR = "/tmp/pdf-compressor"
 ALLOWED_EXTENSIONS = {".pdf"}
 PDF_MAGIC_BYTES = b"%PDF-"
+
+# Auth
+PASSWORD = "Läddie"
+AUTH_TOKEN = hashlib.sha256(f"pdf-compressor-{PASSWORD}".encode()).hexdigest()
+COOKIE_MAX_AGE = 60 * 60 * 24 * 90  # 3 months
+
+# DPI presets (None = don't change)
+DPI_PRESETS = {
+    "unchanged": None,
+    "print": 300,
+    "ebook": 150,
+    "screen": 72,
+}
+
+# Quality presets (JPEG quality 0-100)
+QUALITY_PRESETS = {
+    "very_high": 95,
+    "high": 80,
+    "medium": 60,
+}
 
 # Ensure temp directory exists
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -50,6 +73,11 @@ cleanup_old_files()
 atexit.register(cleanup_all_files)
 
 
+def is_authenticated() -> bool:
+    """Check if user has valid auth cookie"""
+    return request.cookies.get("auth") == AUTH_TOKEN
+
+
 def is_valid_pdf(file_stream) -> bool:
     """Check if file starts with PDF magic bytes"""
     header = file_stream.read(5)
@@ -57,19 +85,50 @@ def is_valid_pdf(file_stream) -> bool:
     return header == PDF_MAGIC_BYTES
 
 
-def compress_pdf(input_path: str, output_path: str) -> bool:
-    """Compress PDF using Ghostscript with ebook preset"""
+def compress_pdf(input_path: str, output_path: str, dpi: Optional[int] = None, jpeg_quality: int = 80) -> bool:
+    """Compress PDF using Ghostscript with custom settings"""
+    # Calculate QFactor (0.1 = best quality, 1.0 = worst)
+    qfactor = (100 - jpeg_quality) / 100 * 0.9 + 0.1
+
     cmd = [
         "gs",
         "-sDEVICE=pdfwrite",
         "-dCompatibilityLevel=1.4",
-        "-dPDFSETTINGS=/ebook",
         "-dNOPAUSE",
         "-dQUIET",
         "-dBATCH",
         f"-sOutputFile={output_path}",
-        input_path,
+        # JPEG compression quality
+        "-dAutoFilterColorImages=false",
+        "-dAutoFilterGrayImages=false",
+        "-dColorImageFilter=/DCTEncode",
+        "-dGrayImageFilter=/DCTEncode",
+        "-c",
+        f"<< /ColorACSImageDict << /QFactor {qfactor:.2f} /Blend 1 /HSamples [1 1 1 1] /VSamples [1 1 1 1] >> /GrayACSImageDict << /QFactor {qfactor:.2f} /Blend 1 /HSamples [1 1 1 1] /VSamples [1 1 1 1] >> >> setdistillerparams",
+        "-f",
     ]
+
+    # Only add DPI settings if specified
+    if dpi is not None:
+        # Insert DPI settings before -c
+        dpi_settings = [
+            "-dDownsampleColorImages=true",
+            "-dDownsampleGrayImages=true",
+            "-dDownsampleMonoImages=true",
+            "-dColorImageDownsampleType=/Bicubic",
+            "-dGrayImageDownsampleType=/Bicubic",
+            "-dMonoImageDownsampleType=/Bicubic",
+            f"-dColorImageResolution={dpi}",
+            f"-dGrayImageResolution={dpi}",
+            f"-dMonoImageResolution={dpi}",
+        ]
+        # Insert before JPEG settings
+        idx = cmd.index("-dAutoFilterColorImages=false")
+        for i, setting in enumerate(dpi_settings):
+            cmd.insert(idx + i, setting)
+
+    cmd.append(input_path)
+
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=120)
         return result.returncode == 0
@@ -86,6 +145,84 @@ def safe_remove(filepath: str) -> None:
             os.remove(filepath)
     except OSError:
         pass
+
+
+LOGIN_TEMPLATE = """<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Kompressor - Login</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 360px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 { color: #333; margin-bottom: 8px; font-size: 24px; }
+        .subtitle { color: #666; margin-bottom: 32px; font-size: 14px; }
+        .error {
+            background: #fff5f5;
+            border: 1px solid #fed7d7;
+            color: #c53030;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        input[type="password"] {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 16px;
+            transition: border-color 0.2s;
+        }
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #4a90d9;
+        }
+        .btn {
+            background: #4a90d9;
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+        }
+        .btn:hover { background: #3a7bc8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Kompressor</h1>
+        <p class="subtitle">Bitte Passwort eingeben</p>
+        {{ERROR}}
+        <form method="POST" action="/login">
+            <input type="password" name="password" placeholder="Passwort" autofocus required>
+            <button type="submit" class="btn">Anmelden</button>
+        </form>
+    </div>
+</body>
+</html>"""
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -115,7 +252,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             text-align: center;
         }
         h1 { color: #333; margin-bottom: 8px; font-size: 24px; }
-        .subtitle { color: #666; margin-bottom: 32px; font-size: 14px; }
+        .subtitle { color: #666; margin-bottom: 24px; font-size: 14px; }
+        .settings {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            justify-content: center;
+        }
+        .setting {
+            flex: 1;
+            max-width: 180px;
+        }
+        .setting label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 6px;
+            text-align: left;
+        }
+        .setting select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .setting select:hover { border-color: #4a90d9; }
+        .setting select:focus { outline: none; border-color: #4a90d9; }
         .dropzone {
             border: 2px dashed #ccc;
             border-radius: 12px;
@@ -199,12 +365,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         .btn-secondary:hover { background: #f0f0f0; }
         input[type="file"] { display: none; }
+        @media (max-width: 400px) {
+            .settings { flex-direction: column; align-items: center; }
+            .setting { max-width: 100%; width: 100%; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>PDF Kompressor</h1>
         <p class="subtitle">Ziehe eine PDF-Datei hierher oder klicke zum Auswählen</p>
+
+        <div class="settings" id="settings">
+            <div class="setting">
+                <label for="dpi">Auflösung</label>
+                <select id="dpi">
+                    <option value="unchanged" selected>Nicht verändern</option>
+                    <option value="print">Druck (300 DPI)</option>
+                    <option value="ebook">E-Book (150 DPI)</option>
+                    <option value="screen">Screen (72 DPI)</option>
+                </select>
+            </div>
+            <div class="setting">
+                <label for="quality">Qualität</label>
+                <select id="quality">
+                    <option value="very_high">Sehr hoch</option>
+                    <option value="high" selected>Hoch</option>
+                    <option value="medium">Mittel</option>
+                </select>
+            </div>
+        </div>
 
         <div class="dropzone" id="dropzone">
             <p class="dropzone-text">PDF hier ablegen</p>
@@ -230,6 +420,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const result = document.getElementById('result');
         const resultTitle = document.getElementById('resultTitle');
         const resultContent = document.getElementById('resultContent');
+        const settings = document.getElementById('settings');
+        const dpiSelect = document.getElementById('dpi');
+        const qualitySelect = document.getElementById('quality');
 
         dropzone.addEventListener('click', () => fileInput.click());
 
@@ -269,11 +462,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             const originalSize = file.size;
             dropzone.classList.add('hidden');
+            settings.classList.add('hidden');
             result.classList.add('hidden');
             progress.classList.remove('hidden');
 
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('dpi', dpiSelect.value);
+            formData.append('quality', qualitySelect.value);
 
             fetch('/compress', {
                 method: 'POST',
@@ -320,6 +516,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         function showError(message) {
             progress.classList.add('hidden');
             dropzone.classList.add('hidden');
+            settings.classList.add('hidden');
             result.classList.remove('hidden');
             result.classList.add('error');
             resultTitle.textContent = 'Fehler';
@@ -332,6 +529,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         function reset() {
             fileInput.value = '';
             dropzone.classList.remove('hidden');
+            settings.classList.remove('hidden');
             result.classList.add('hidden');
             progress.classList.add('hidden');
         }
@@ -342,7 +540,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 @app.route("/")
 def index():
+    if not is_authenticated():
+        return LOGIN_TEMPLATE.replace("{{ERROR}}", "")
     return HTML_TEMPLATE
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    password = request.form.get("password", "")
+    if password == PASSWORD:
+        response = make_response(redirect("/"))
+        response.set_cookie("auth", AUTH_TOKEN, max_age=COOKIE_MAX_AGE, httponly=True, samesite="Lax")
+        return response
+    return LOGIN_TEMPLATE.replace("{{ERROR}}", '<div class="error">Falsches Passwort</div>')
 
 
 @app.route("/health")
@@ -352,6 +562,9 @@ def health():
 
 @app.route("/compress", methods=["POST"])
 def compress():
+    if not is_authenticated():
+        return jsonify({"error": "Nicht autorisiert"}), 401
+
     if "file" not in request.files:
         return jsonify({"error": "Keine Datei hochgeladen"}), 400
 
@@ -380,6 +593,13 @@ def compress():
     if not is_valid_pdf(file):
         return jsonify({"error": "Ungültige PDF-Datei"}), 400
 
+    # Get compression settings
+    dpi_preset = request.form.get("dpi", "unchanged")
+    quality_preset = request.form.get("quality", "high")
+
+    dpi = DPI_PRESETS.get(dpi_preset)
+    jpeg_quality = QUALITY_PRESETS.get(quality_preset, 80)
+
     # Generate unique filenames
     file_id = str(uuid.uuid4())
     input_path = os.path.join(TEMP_DIR, f"{file_id}_input.pdf")
@@ -390,7 +610,7 @@ def compress():
         file.save(input_path)
 
         # Compress PDF
-        if not compress_pdf(input_path, output_path):
+        if not compress_pdf(input_path, output_path, dpi=dpi, jpeg_quality=jpeg_quality):
             return jsonify({"error": "Komprimierung fehlgeschlagen"}), 500
 
         # Check if output exists
