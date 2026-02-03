@@ -24,8 +24,10 @@ TEMP_DIR = "/tmp/pdf-compressor"
 ALLOWED_EXTENSIONS = {".pdf"}
 PDF_MAGIC_BYTES = b"%PDF-"
 
-# Auth
-PASSWORD = "Läddie"
+# Auth (password from environment variable)
+PASSWORD = os.environ.get("PDF_PASSWORD")
+if not PASSWORD:
+    raise RuntimeError("PDF_PASSWORD environment variable is required")
 AUTH_TOKEN = hashlib.sha256(f"pdf-compressor-{PASSWORD}".encode()).hexdigest()
 COOKIE_MAX_AGE = 60 * 60 * 24 * 90  # 3 months
 

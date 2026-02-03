@@ -31,8 +31,8 @@ source venv/bin/activate
 # Dependencies installieren
 pip install -r requirements.txt
 
-# App starten
-python app.py
+# App starten (Passwort als Env-Variable)
+PDF_PASSWORD=deinpasswort python app.py
 ```
 
 App läuft auf http://localhost:8000
@@ -41,7 +41,7 @@ App läuft auf http://localhost:8000
 
 ```bash
 docker build -t pdf-compressor .
-docker run -p 8000:8000 pdf-compressor
+docker run -p 8000:8000 -e PDF_PASSWORD=deinpasswort pdf-compressor
 ```
 
 ## Dokploy Deployment

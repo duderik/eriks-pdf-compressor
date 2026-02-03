@@ -20,7 +20,7 @@ requirements.txt    # flask, gunicorn
 ## Wichtige Konfiguration
 
 - **Max File Size**: 250 MB
-- **Passwort**: "Läddie" (Session-Cookie, 3 Monate gültig)
+- **Passwort**: Env-Variable `PDF_PASSWORD` (Session-Cookie, 3 Monate gültig)
 - **Temp-Verzeichnis**: `/tmp/pdf-compressor`
 
 ## Komprimierungsoptionen
@@ -54,7 +54,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Server starten
-python app.py
+PDF_PASSWORD=deinpasswort python app.py
 # → http://localhost:8000
 ```
 
@@ -62,7 +62,7 @@ python app.py
 
 ```bash
 docker build -t pdf-compressor .
-docker run -p 8000:8000 pdf-compressor
+docker run -p 8000:8000 -e PDF_PASSWORD=deinpasswort pdf-compressor
 ```
 
 ## Endpoints
