@@ -23,7 +23,7 @@ requirements.txt    # flask, gunicorn
 
 | Variable | Pflicht | Beschreibung |
 |----------|---------|--------------|
-| `PDF_PASSWORD` | Ja | Login-Passwort (App startet nicht ohne) |
+| `LOGIN_PASSWORD` | Ja | Login-Passwort (App startet nicht ohne) |
 
 ## Wichtige Konfiguration
 
@@ -62,7 +62,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Server starten
-PDF_PASSWORD=deinpasswort python app.py
+LOGIN_PASSWORD=deinpasswort python app.py
 # → http://localhost:8000
 ```
 
@@ -70,14 +70,14 @@ PDF_PASSWORD=deinpasswort python app.py
 
 ```bash
 docker build -t pdf-compressor .
-docker run -p 8000:8000 -e PDF_PASSWORD=deinpasswort pdf-compressor
+docker run -p 8000:8000 -e LOGIN_PASSWORD=deinpasswort pdf-compressor
 ```
 
 ## Dokploy Deployment
 
 1. GitHub-Repo verbinden
 2. Build Type: Dockerfile
-3. Environment: `PDF_PASSWORD=deinpasswort`
+3. Environment: `LOGIN_PASSWORD=deinpasswort`
 4. Domain + HTTPS konfigurieren
 5. Deploy
 
