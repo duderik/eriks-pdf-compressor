@@ -4,7 +4,7 @@ Interne Web-App zur PDF-Komprimierung mit Ghostscript.
 
 ## Tech Stack
 
-- **Backend**: Python 3.11 + Flask
+- **Backend**: Python 3.9+ / Flask
 - **PDF-Komprimierung**: Ghostscript
 - **Server**: Gunicorn (4 Workers, 120s Timeout)
 - **Deployment**: Docker → Dokploy
@@ -15,12 +15,20 @@ Interne Web-App zur PDF-Komprimierung mit Ghostscript.
 app.py              # Einzige Python-Datei (inkl. inline HTML/CSS/JS)
 Dockerfile          # Python 3.11-slim + Ghostscript
 requirements.txt    # flask, gunicorn
+.gitignore          # venv, __pycache__, etc.
+.dockerignore       # Build-Optimierung
 ```
+
+## Environment-Variablen
+
+| Variable | Pflicht | Beschreibung |
+|----------|---------|--------------|
+| `PDF_PASSWORD` | Ja | Login-Passwort (App startet nicht ohne) |
 
 ## Wichtige Konfiguration
 
 - **Max File Size**: 250 MB
-- **Passwort**: Env-Variable `PDF_PASSWORD` (Session-Cookie, 3 Monate gültig)
+- **Session-Cookie**: 3 Monate gültig
 - **Temp-Verzeichnis**: `/tmp/pdf-compressor`
 
 ## Komprimierungsoptionen
@@ -65,6 +73,14 @@ docker build -t pdf-compressor .
 docker run -p 8000:8000 -e PDF_PASSWORD=deinpasswort pdf-compressor
 ```
 
+## Dokploy Deployment
+
+1. GitHub-Repo verbinden
+2. Build Type: Dockerfile
+3. Environment: `PDF_PASSWORD=deinpasswort`
+4. Domain + HTTPS konfigurieren
+5. Deploy
+
 ## Endpoints
 
 | Endpoint | Methode | Auth | Beschreibung |
@@ -73,3 +89,11 @@ docker run -p 8000:8000 -e PDF_PASSWORD=deinpasswort pdf-compressor
 | `/login` | POST | Nein | Passwort-Prüfung |
 | `/health` | GET | Nein | Health-Check |
 | `/compress` | POST | Ja | PDF komprimieren |
+
+## Security
+
+- Passwort nicht im Code, nur als Env-Variable
+- Session-Cookie: httponly, samesite=Lax
+- PDF Magic-Byte Validation
+- UUID-basierte Temp-Dateinamen
+- Non-root User im Container
